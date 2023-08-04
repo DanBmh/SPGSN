@@ -107,7 +107,7 @@ def main(opt):
     
     optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
     if opt.is_load:
-        model_path_len = 'checkpoint/test/{}/'.format(checkpoint_dir) + 'ckpt_' + script_name + '_last.pth.tar'
+        model_path_len = 'checkpoint/{}/'.format(checkpoint_dir) + 'ckpt_' + script_name + '_best.pth.tar'
         print(">>> loading ckpt len from '{}'".format(model_path_len))
         if is_cuda:
             ckpt = torch.load(model_path_len)
@@ -119,12 +119,22 @@ def main(opt):
         model.load_state_dict(ckpt['state_dict'])
         optimizer.load_state_dict(ckpt['optimizer'])
         print(">>> ckpt len loaded (epoch: {} | err: {})".format(start_epoch, err_best))
-        
-        acts_ = ['sitting']
-        for act in acts_:
+
+        ret_log = np.array([0, 0, 0 ,0])
+        test_3d_temp = np.array([])
+        test_3d_head = np.array([])
+        for act in acts:
             test_l, test_3d = test((act, test_data[act]), model, input_n=input_n, output_n=output_n, is_cuda=is_cuda,
                                    dim_used=train_dataset.dim_used, dct_n=dct_n)
+            ret_log = np.append(ret_log, test_3d)
+        ret_log = np.append(ret_log, test_3d_temp)
         
+        avg_test3d = ret_log[4:].reshape(15,-1).mean(0)
+        ret_log = np.append(ret_log, avg_test3d)
+        ret_log = np.append(ret_log, avg_test3d.mean())
+
+        print(ret_log)
+        exit()
 
     for epoch in range(start_epoch, opt.epochs):
 
@@ -212,7 +222,7 @@ def train(train_loader, model, optimizer, lr_now=None, max_norm=True, is_cuda=Fa
         bt = time.time()
         if is_cuda:
             inputs = inputs.cuda().float()
-            all_seq = all_seq.cuda(async=True).float()
+            all_seq = all_seq.cuda(non_blocking=True).float()
 
         outputs = model(inputs)
 
@@ -254,11 +264,10 @@ def test(act_train_loader, model, input_n=20, output_n=50, is_cuda=False, dim_us
 
             if is_cuda:
                 inputs = inputs.cuda().float()
-                all_seq = all_seq.cuda(async=True).float()
+                all_seq = all_seq.cuda(non_blocking=True).float()
 
-        
             outputs = model(inputs)
-    
+
             n, seq_len, dim_full_len = all_seq.data.shape
             dim_used_len = len(dim_used)
 
@@ -287,10 +296,10 @@ def test(act_train_loader, model, input_n=20, output_n=50, is_cuda=False, dim_us
             N += n
 
     actname = "{0: <14} |".format(act)
-    print('Act: {},  ErrT: {:.3f} {:.3f} {:.3f} {:.3f}, TestError {:.4f}, total time{:.2f}s'\
+    print('Act: {},  ErrT: {:.3f} {:.3f} {:.3f} {:.3f}, TestError {:.4f}, total time{:.2f}s, samplenum {}'\
              .format(actname, 
                      float(t_3d[0])/N, float(t_3d[1])/N, float(t_3d[2])/N, float(t_3d[3])/N, 
-                     float(t_3d.mean())/N, time.time() - st))
+                     float(t_3d.mean())/N, time.time() - st, N))
 
     #     bar.suffix = '{}/{}|batch time {:.4f}s|total time{:.2f}s'.format(i+1, len(train_loader), time.time()-bt, time.time()-st)
     #     bar.next()
@@ -310,7 +319,7 @@ def val(train_loader, model, is_cuda=False, dim_used=[], dct_n=15):
 
             if is_cuda:
                 inputs = inputs.cuda().float()
-                all_seq = all_seq.cuda(async=True).float()
+                all_seq = all_seq.cuda(non_blocking=True).float()
 
             outputs = model(inputs)
 

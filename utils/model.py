@@ -176,7 +176,7 @@ class GraphConvScatter(nn.Module):
         
         L = self.graphLap(self.att)
         
-        print(x.shape, self.att.shape, L.shape)
+        # print(x.shape, self.att.shape, L.shape)
 
         x = x.unsqueeze(1)
         y_conv = self.feat_gcn(x, self.att.unsqueeze(0))
