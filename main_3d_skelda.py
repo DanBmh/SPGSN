@@ -18,7 +18,7 @@ import utils.data_utils as data_utils
 import tqdm
 import sys
 
-sys.path.append("/PoseForecaster/")
+sys.path.append("/PoseForecasters/")
 import utils_pipeline
 
 # ==================================================================================================
