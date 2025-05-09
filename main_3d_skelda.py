@@ -18,42 +18,46 @@ import utils.data_utils as data_utils
 import tqdm
 import sys
 
-sys.path.append("/PoseForecasters/")
-import utils_pipeline
-
-# ==================================================================================================
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device: %s" % device)
 
-datapath_preprocessed = "/datasets/preprocessed/human36m/{}_forecast_kppspose.json"
-config = {
+# ==================================================================================================
+
+sys.path.append("/PoseForecasters/")
+import utils_pipeline
+
+sconfig = {
     "item_step": 2,
     "window_step": 2,
     "input_n": 50,
     "output_n": 25,
     "select_joints": [
-        "hip_middle",
         "hip_right",
-        "knee_right",
-        "ankle_right",
         "hip_left",
+        "knee_right",
         "knee_left",
+        "ankle_right",
         "ankle_left",
         "nose",
-        "shoulder_left",
-        "elbow_left",
-        "wrist_left",
         "shoulder_right",
+        "shoulder_left",
         "elbow_right",
+        "elbow_left",
         "wrist_right",
-        "shoulder_middle",
+        "wrist_left",
     ],
 }
 
-in_features = len(config["select_joints"]) * 3
-dim_used = list(range(in_features))
+datasets_train = [
+    "/datasets/preprocessed/human36m/train_forecast_rpt.json",
+]
 
+dataset_eval_test = "/datasets/preprocessed/human36m/{}_forecast_rpt.json"
+
+in_features = len(sconfig["select_joints"]) * 3
+dim_used = list(range(in_features))
+upper_body = [6, 7, 8, 9, 10, 11, 12]
+lower_body = [0, 1, 2, 3, 4, 5]
 
 # ==================================================================================================
 
@@ -63,6 +67,9 @@ def prepare_sequences(batch, batch_size: int, split: str, device):
 
     # Merge joints and coordinates to a single dimension
     sequences = sequences.reshape([batch_size, sequences.shape[1], -1])
+
+    # Convert to millimeters
+    sequences = sequences * 1000.0
 
     return sequences
 
@@ -141,9 +148,9 @@ def main(opt):
     dct_n = opt.dct_n
 
     # upper body parts
-    upJ = np.array([7, 8, 9, 10, 11, 12, 13, 14])
+    upJ = np.array(upper_body)
     # lower body joints
-    downJ = np.array([0, 1, 2, 3, 4, 5, 6])
+    downJ = np.array(lower_body)
 
     dim_up = np.concatenate((upJ * 3, upJ * 3 + 1, upJ * 3 + 2))
     dim_down = np.concatenate((downJ * 3, downJ * 3 + 1, downJ * 3 + 2))
@@ -175,26 +182,17 @@ def main(opt):
     # Load preprocessed datasets
     print("Loading datasets ...")
     dataset_train, dlen_train = utils_pipeline.load_dataset(
-        datapath_preprocessed, "train", config
+        datasets_train[0], "train", sconfig
     )
-    esplit = "test" if "mocap" in datapath_preprocessed else "eval"
-
     dataset_eval, dlen_eval = utils_pipeline.load_dataset(
-        datapath_preprocessed, esplit, config
+        dataset_eval_test.format("eval"), "eval", sconfig
     )
     dataset_test, dlen_test = utils_pipeline.load_dataset(
-        datapath_preprocessed, "test", config
+        dataset_eval_test.format("test"), "test", sconfig
     )
-
-    # dataset_test, dlen_test = utils_pipeline.load_dataset(
-    #     datapath_preprocessed, "eval", config
-    # )
-    # dataset_train, dlen_train = utils_pipeline.load_dataset(
-    #     datapath_preprocessed, "eval", config
-    # )
-    # dataset_eval, dlen_eval = utils_pipeline.load_dataset(
-    #     datapath_preprocessed, "eval", config
-    # )
+    dataset_train = dataset_train["sequences"]
+    dataset_eval = dataset_eval["sequences"]
+    dataset_test = dataset_test["sequences"]
 
     optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
     if opt.is_load:
@@ -218,9 +216,7 @@ def main(opt):
         print(">>> ckpt len loaded (epoch: {} | err: {})".format(start_epoch, err_best))
 
         # Load preprocessed datasets
-        label_gen_test = utils_pipeline.create_labels_generator(
-            dataset_test["sequences"], config
-        )
+        label_gen_test = utils_pipeline.create_labels_generator(dataset_test, sconfig)
 
         test_l, test_3d = test(
             label_gen_test,
@@ -247,15 +243,9 @@ def main(opt):
         ret_log = np.array([epoch + 1])
         head = np.array(["epoch"])
 
-        label_gen_train = utils_pipeline.create_labels_generator(
-            dataset_train["sequences"], config
-        )
-        label_gen_eval = utils_pipeline.create_labels_generator(
-            dataset_eval["sequences"], config
-        )
-        label_gen_test = utils_pipeline.create_labels_generator(
-            dataset_test["sequences"], config
-        )
+        label_gen_train = utils_pipeline.create_labels_generator(dataset_train, sconfig)
+        label_gen_eval = utils_pipeline.create_labels_generator(dataset_eval, sconfig)
+        label_gen_test = utils_pipeline.create_labels_generator(dataset_test, sconfig)
 
         # per epoch
         lr_now, t_l = train(
@@ -308,19 +298,7 @@ def main(opt):
 
         # update log file and save checkpoint
         df = pd.DataFrame(np.expand_dims(ret_log, axis=0))
-        if epoch == start_epoch:
-            if not os.path.exists(opt.ckpt + "/" + checkpoint_dir):
-                os.makedirs(opt.ckpt + "/" + checkpoint_dir)
-            df.to_csv(
-                opt.ckpt + "/" + checkpoint_dir + "/" + script_name + ".csv",
-                header=head,
-                index=False,
-            )
-        else:
-            with open(
-                opt.ckpt + "/" + checkpoint_dir + "/" + script_name + ".csv", "a"
-            ) as f:
-                df.to_csv(f, header=False, index=False)
+        print(df)
 
         print(os.system("ls " + opt.ckpt + "/" + checkpoint_dir + "/"))
 
